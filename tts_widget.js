@@ -110,6 +110,9 @@ var TTSWidget = (function () {
                             <select id="ttsVoiceSelect" class="tts-select">
                                 <option>Cargando voces...</option>
                             </select>
+                            <div class="voice-hint">
+                                ℹ️ El cambio de voz se aplicará al iniciar una nueva lectura
+                            </div>
                         </div>
                         
                         <div class="control-group">
@@ -263,6 +266,39 @@ var TTSWidget = (function () {
                 volumeValue.textContent = userPrefs.volume + '%';
                 if (utterance) utterance.volume = userPrefs.volume / 100;
                 saveUserPreferences();
+            });
+        }
+
+        // Dentro de attachEventListeners(), después de los listeners existentes:
+
+        if (speedControl) {
+            speedControl.addEventListener('input', function (e) {
+                userPrefs.speed = parseFloat(e.target.value);
+                speedValue.textContent = userPrefs.speed + 'x';
+                saveUserPreferences();
+
+                // ←←← NUEVO: cambio inmediato mientras lee
+                if (utterance) utterance.rate = userPrefs.speed;
+                // Forzar que el fragmento actual también lo use
+                if (synth.speaking && !synth.paused) {
+                    synth.cancel();
+                    setTimeout(speakNext, 50);  // speakNext es la función que ya tienes dentro de play()
+                }
+            });
+        }
+
+        if (volumeControl) {
+            volumeControl.addEventListener('input', function (e) {
+                userPrefs.volume = parseInt(e.target.value);
+                volumeValue.textContent = userPrefs.volume + '%';
+                saveUserPreferences();
+
+                // ←←← NUEVO: cambio inmediato mientras lee
+                if (utterance) utterance.volume = userPrefs.volume / 100;
+                if (synth.speaking && !synth.paused) {
+                    synth.cancel();
+                    setTimeout(speakNext, 50);
+                }
             });
         }
 
