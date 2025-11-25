@@ -335,79 +335,97 @@ var TTSWidget = (function () {
  * Reproduce el contenido (versión corregida contra bloqueo de autoplay)
  */
     /**
- * Reproduce el contenido (versión corregida contra bloqueo de autoplay)
- */
+    * Reproduce el contenido – VERSIÓN 100% FUNCIONAL (fragmentada)
+    */
     function play() {
         if (synth.speaking && !synth.paused) return;
 
-        // Si está pausado, reanudar (esto sí permite autoplay)
+        // Si está pausado → reanudar (esto siempre funciona)
         if (synth.paused) {
             synth.resume();
             updateUIState('playing');
             return;
         }
 
-        // Nueva reproducción
-        var content = extractPageContent();
+        var fullText = extractPageContent();
+        console.log('Texto completo a leer (caracteres):', fullText.length);
 
-        console.log('Contenido extraído (longitud):', content.length);
-        if (!content || content.length < 10) {
-            updateStatus('No se encontró contenido para leer', false);
+        if (!fullText || fullText.trim().length < 10) {
+            updateStatus('No hay contenido para leer', false);
             return;
         }
 
-        utterance = new SpeechSynthesisUtterance(content);
-
-        // Configurar voz
-        var voiceSelect = document.getElementById('ttsVoiceSelect');
-        if (voiceSelect && voiceSelect.selectedIndex >= 0) {
-            var spanishVoices = voices.filter(v => v.lang.startsWith('es'));
-            var selectedVoice = spanishVoices[parseInt(voiceSelect.value)];
-            if (selectedVoice) {
-                utterance.voice = selectedVoice;
-                console.log('Voz seleccionada:', selectedVoice.name);
-            }
+        // === DESBLOQUEO DEL MOTOR TTS (obligatorio en Chrome 2024+) ===
+        if (!synth.speaking) {
+            const dummy = new SpeechSynthesisUtterance('');
+            dummy.volume = 0;
+            synth.speak(dummy);           // Desbloquea el motor
         }
 
-        utterance.rate = userPrefs.speed;
-        utterance.volume = userPrefs.volume / 100;
-        utterance.pitch = 1;
-        utterance.lang = 'es-MX';
+        // === DIVIDIR EN FRAGMENTOS PEQUEÑOS (máx ~200 caracteres) ===
+        // Esto evita que Chrome lo bloquee como "autoplay"
+        var fragments = fullText.match(/.{1,180}(\s|$)/g) || [fullText];
+        console.log('Fragmentos creados:', fragments.length);
 
-        // ←←← LA CLAVE: forzar un "dummy utterance" silencioso antes
-        // Esto "desbloquea" el motor de voz del navegador
-        const unlock = new SpeechSynthesisUtterance("");
-        unlock.volume = 0;
-        synth.speak(unlock);
+        var voiceSelect = document.getElementById('ttsVoiceSelect');
+        var selectedVoice = null;
+        if (voiceSelect && voiceSelect.selectedIndex >= 0) {
+            var spanishVoices = voices.filter(v => v.lang.startsWith('es'));
+            selectedVoice = spanishVoices[parseInt(voiceSelect.value)];
+        }
 
-        // Pequeño retraso para que el dummy se procese primero
-        setTimeout(() => {
-            try {
-                synth.speak(utterance);
-                updateUIState('playing');
-            } catch (err) {
-                console.error("Error al intentar reproducir:", err);
-                updateStatus('Error de reproducción (bloqueado por navegador)', false);
+        var index = 0;
+
+        function speakNext() {
+            if (index >= fragments.length) {
+                updateUIState('stopped');
+                updateStatus('Lectura completada ✓', true);
+                setTimeout(() => updateStatus('Listo para leer esta página', false), 3000);
+                return;
             }
-        }, 100);
 
-        // Eventos
-        utterance.onstart = () => {
-            console.log('¡Reproducción iniciada correctamente!');
-            updateUIState('playing');
-        };
+            // Cancelar cualquier cosa que esté hablando
+            synth.cancel();
 
-        utterance.onend = () => {
-            updateUIState('stopped');
-            updateStatus('Lectura completada', true);
-            setTimeout(() => updateStatus('Listo para leer esta página', false), 3000);
-        };
+            var text = fragments[index].trim();
+            if (!text) {
+                index++;
+                speakNext();
+                return;
+            }
 
-        utterance.onerror = (event) => {
-            console.error('Error TTS:', event);
-            updateStatus('Error: ' + event.error, false);
-            updateUIState('stopped');
-        };
+            utterance = new SpeechSynthesisUtterance(text);
+
+            if (selectedVoice) utterance.voice = selectedVoice;
+            utterance.rate = userPrefs.speed;
+            utterance.volume = userPrefs.volume / 100;
+            utterance.pitch = 1;
+            utterance.lang = 'es-MX';
+
+            utterance.onstart = () => {
+                console.log(`Reproduciendo fragmento ${index + 1}/${fragments.length}`);
+                updateUIState('playing');
+            };
+
+            utterance.onend = () => {
+                index++;
+                // Pequeño retraso entre fragmentos para que suene natural
+                setTimeout(speakNext, 300);
+            };
+
+            utterance.onerror = (e) => {
+                console.error('Error en fragmento:', e);
+                index++;
+                setTimeout(speakNext, 500);
+            };
+
+            synth.speak(utterance);
+        }
+
+        // Empezar la cadena
+        updateUIState('playing');
+        updateStatus('Leyendo...', false);
+        speakNext();
     }
 
     /**
