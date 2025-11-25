@@ -3,9 +3,9 @@
  * Lector de voz flotante con Web Speech API
  */
 
-var TTSWidget = (function() {
+var TTSWidget = (function () {
     'use strict';
-    
+
     // Variables privadas
     var synth = window.speechSynthesis;
     var utterance = null;
@@ -13,7 +13,7 @@ var TTSWidget = (function() {
     var voices = [];
     var config = {};
     var widgetElement = null;
-    
+
     // Preferencias del usuario (localStorage)
     var userPrefs = {
         voice: null,
@@ -21,23 +21,29 @@ var TTSWidget = (function() {
         volume: 100,
         minimized: true
     };
-    
+
     /**
      * Inicializa el widget
      */
     function init(configuration) {
+        // Evitar duplicados: si ya existe el widget, salir
+        if (document.getElementById('ttsWidget')) {
+            console.log('TTS Widget ya inicializado, saliendo.');
+            return;
+        }
+
         config = configuration || {};
         loadUserPreferences();
         createWidget();
         loadVoices();
         attachEventListeners();
-        
+
         // Cargar voces cuando estén disponibles
         if (synth.onvoiceschanged !== undefined) {
             synth.onvoiceschanged = loadVoices;
         }
     }
-    
+
     /**
      * Carga preferencias del usuario desde localStorage
      */
@@ -51,7 +57,7 @@ var TTSWidget = (function() {
         } catch (e) {
             console.warn('No se pudieron cargar las preferencias TTS:', e);
         }
-        
+
         // Aplicar configuración por defecto del admin si existe
         if (config.defaultSpeed) {
             userPrefs.speed = parseFloat(config.defaultSpeed);
@@ -63,7 +69,7 @@ var TTSWidget = (function() {
             userPrefs.minimized = config.autoMinimize;
         }
     }
-    
+
     /**
      * Guarda preferencias del usuario en localStorage
      */
@@ -74,14 +80,14 @@ var TTSWidget = (function() {
             console.warn('No se pudieron guardar las preferencias TTS:', e);
         }
     }
-    
+
     /**
      * Crea el HTML del widget
      */
     function createWidget() {
         var position = config.position || 'right-center';
         var minimizedClass = userPrefs.minimized ? 'minimized' : '';
-        
+
         var html = `
             <div id="ttsWidget" class="tts-widget position-${position} ${minimizedClass}">
                 <div class="tts-widget-icon" onclick="TTSWidget.toggleWidget()">
@@ -150,119 +156,125 @@ var TTSWidget = (function() {
                 </div>
             </div>
         `;
-        
+
         document.body.insertAdjacentHTML('beforeend', html);
         widgetElement = document.getElementById('ttsWidget');
     }
-    
+
     /**
      * Carga las voces disponibles
      */
     function loadVoices() {
         voices = synth.getVoices();
         var voiceSelect = document.getElementById('ttsVoiceSelect');
-        
+
         if (!voiceSelect) return;
-        
+
         voiceSelect.innerHTML = '';
-        
+
         // Filtrar voces en español
-        var spanishVoices = voices.filter(function(v) {
+        var spanishVoices = voices.filter(function (v) {
             return v.lang.startsWith('es');
         });
-        
+
+        console.log('Voces en español encontradas:', spanishVoices.length); // Debug
+
         if (spanishVoices.length === 0) {
             voiceSelect.innerHTML = '<option>Sin voces en español</option>';
+            // Retry en 1s por si voces cargan tarde
+            setTimeout(loadVoices, 1000);
             return;
         }
-        
+
         // Ordenar voces: latinoamericanas primero
-        spanishVoices.sort(function(a, b) {
+        spanishVoices.sort(function (a, b) {
             var aIsLatam = isLatinAmericanVoice(a);
             var bIsLatam = isLatinAmericanVoice(b);
-            
+
             if (aIsLatam && !bIsLatam) return -1;
             if (!aIsLatam && bIsLatam) return 1;
             return a.name.localeCompare(b.name);
         });
-        
-        spanishVoices.forEach(function(voice, i) {
+
+        spanishVoices.forEach(function (voice, i) {
             var option = document.createElement('option');
             option.value = i;
             option.dataset.voiceName = voice.name;
-            
+
             var isLatam = isLatinAmericanVoice(voice);
             var displayName = voice.name.split(' ')[0] || voice.name;
             option.textContent = displayName + (isLatam ? ' ⭐' : '');
-            
             voiceSelect.appendChild(option);
         });
-        
-        // Restaurar voz guardada
+
+        // Seleccionar voz preferida o default
         if (userPrefs.voice) {
-            var savedIndex = spanishVoices.findIndex(function(v) {
+            var selectedIndex = spanishVoices.findIndex(function (v) {
                 return v.name === userPrefs.voice;
             });
-            if (savedIndex !== -1) {
-                voiceSelect.value = savedIndex;
+            if (selectedIndex !== -1) {
+                voiceSelect.value = selectedIndex;
+            }
+        } else {
+            // Default a primera latina
+            var latamVoice = spanishVoices.find(isLatinAmericanVoice);
+            if (latamVoice) {
+                voiceSelect.value = spanishVoices.indexOf(latamVoice);
+                userPrefs.voice = latamVoice.name;
+                saveUserPreferences();
             }
         }
     }
-    
+
     /**
-     * Detecta si una voz es latinoamericana
+     * Detecta si la voz es latinoamericana
      */
     function isLatinAmericanVoice(voice) {
-        var latinCountries = ['MX', 'AR', 'CO', 'CL', 'PE', 'VE', 'EC', 'GT', 'CU', 'DO', 'HN', 'BO', 'SV', 'NI', 'CR', 'PA', 'UY', 'PY'];
-        
-        for (var i = 0; i < latinCountries.length; i++) {
-            if (voice.lang.includes(latinCountries[i])) {
-                return true;
-            }
-        }
-        
-        var nameLower = voice.name.toLowerCase();
-        return nameLower.includes('latin') || 
-               nameLower.includes('america') || 
-               nameLower.includes('mexico') ||
-               nameLower.includes('colombia');
+        var latamCodes = ['es-MX', 'es-AR', 'es-CL', 'es-CO', 'es-PE', 'es-VE', 'es-PR'];
+        return latamCodes.includes(voice.lang) ||
+            voice.name.toLowerCase().includes('latin') ||
+            voice.name.toLowerCase().includes('mexic') ||
+            voice.name.toLowerCase().includes('colomb') ||
+            voice.name.toLowerCase().includes('argent');
     }
-    
+
     /**
-     * Adjunta event listeners
+     * Adjunta listeners de eventos
      */
     function attachEventListeners() {
         var speedControl = document.getElementById('ttsSpeedControl');
+        var speedValue = document.getElementById('ttsSpeedValue');
         var volumeControl = document.getElementById('ttsVolumeControl');
+        var volumeValue = document.getElementById('ttsVolumeValue');
         var voiceSelect = document.getElementById('ttsVoiceSelect');
-        
-        if (speedControl) {
-            speedControl.addEventListener('input', function(e) {
-                var value = parseFloat(e.target.value);
-                document.getElementById('ttsSpeedValue').textContent = value.toFixed(1) + 'x';
-                userPrefs.speed = value;
+
+        if (speedControl && speedValue) {
+            speedControl.addEventListener('input', function (e) {
+                userPrefs.speed = parseFloat(e.target.value);
+                speedValue.textContent = userPrefs.speed + 'x';
+                if (utterance) utterance.rate = userPrefs.speed;
                 saveUserPreferences();
             });
         }
-        
-        if (volumeControl) {
-            volumeControl.addEventListener('input', function(e) {
-                var value = parseInt(e.target.value);
-                document.getElementById('ttsVolumeValue').textContent = value + '%';
-                userPrefs.volume = value;
+
+        if (volumeControl && volumeValue) {
+            volumeControl.addEventListener('input', function (e) {
+                userPrefs.volume = parseInt(e.target.value);
+                volumeValue.textContent = userPrefs.volume + '%';
+                if (utterance) utterance.volume = userPrefs.volume / 100;
                 saveUserPreferences();
             });
         }
-        
+
         if (voiceSelect) {
-            voiceSelect.addEventListener('change', function(e) {
+            voiceSelect.addEventListener('change', function (e) {
                 var option = e.target.options[e.target.selectedIndex];
                 userPrefs.voice = option.dataset.voiceName;
                 saveUserPreferences();
             });
         }
     }
-    
+
     /**
      * Extrae el contenido legible de la página
      */
@@ -273,116 +285,137 @@ var TTSWidget = (function() {
             '[role="main"]',          // Contenido principal genérico
             'article',                // Artículos
             '.content-area',          // Áreas de contenido
-            'main'                    // Tag main HTML5
+            'main',                   // Tag main HTML5
+            '.modtype_page .content', // Específico para mod/page
+            '.box.contents'           // Contenido en páginas Moodle
         ];
-        
+
         var content = '';
-        
+
         for (var i = 0; i < selectors.length; i++) {
             var element = document.querySelector(selectors[i]);
             if (element) {
                 // Clonar para no afectar el DOM original
                 var clone = element.cloneNode(true);
-                
+
                 // Remover elementos no deseados
                 var unwanted = clone.querySelectorAll('script, style, nav, .navigation, .navbar, footer, aside, [role="navigation"]');
-                unwanted.forEach(function(el) {
+                unwanted.forEach(function (el) {
                     el.remove();
                 });
-                
+
                 content = clone.innerText || clone.textContent;
-                break;
+                if (content.trim()) break; // Si encontró algo, salir
             }
         }
-        
+
         // Si no se encontró contenido específico, usar body pero filtrado
         if (!content.trim()) {
             var body = document.body.cloneNode(true);
             var unwanted = body.querySelectorAll('script, style, nav, header, footer, aside, .tts-widget');
-            unwanted.forEach(function(el) {
+            unwanted.forEach(function (el) {
                 el.remove();
             });
             content = body.innerText || body.textContent;
         }
-        
+
         // Limpiar texto
         content = content
             .replace(/\s+/g, ' ')           // Múltiples espacios a uno
             .replace(/\n{3,}/g, '\n\n')     // Múltiples saltos de línea
             .trim();
-        
+
         return content;
     }
-    
+
     /**
      * Reproduce el contenido
      */
+    /**
+ * Reproduce el contenido (versión corregida contra bloqueo de autoplay)
+ */
+    /**
+ * Reproduce el contenido (versión corregida contra bloqueo de autoplay)
+ */
     function play() {
         if (synth.speaking && !synth.paused) return;
-        
-        // Si está pausado, reanudar
+
+        // Si está pausado, reanudar (esto sí permite autoplay)
         if (synth.paused) {
             synth.resume();
             updateUIState('playing');
             return;
         }
-        
+
         // Nueva reproducción
         var content = extractPageContent();
-        
+
+        console.log('Contenido extraído (longitud):', content.length);
         if (!content || content.length < 10) {
             updateStatus('No se encontró contenido para leer', false);
             return;
         }
-        
+
         utterance = new SpeechSynthesisUtterance(content);
-        
+
         // Configurar voz
         var voiceSelect = document.getElementById('ttsVoiceSelect');
         if (voiceSelect && voiceSelect.selectedIndex >= 0) {
-            var spanishVoices = voices.filter(function(v) {
-                return v.lang.startsWith('es');
-            });
-            var selectedVoice = spanishVoices[voiceSelect.value];
+            var spanishVoices = voices.filter(v => v.lang.startsWith('es'));
+            var selectedVoice = spanishVoices[parseInt(voiceSelect.value)];
             if (selectedVoice) {
                 utterance.voice = selectedVoice;
+                console.log('Voz seleccionada:', selectedVoice.name);
             }
         }
-        
-        // Configurar parámetros
+
         utterance.rate = userPrefs.speed;
         utterance.volume = userPrefs.volume / 100;
         utterance.pitch = 1;
-        utterance.lang = 'es-ES';
-        
-        // Event handlers
-        utterance.onstart = function() {
+        utterance.lang = 'es-MX';
+
+        // ←←← LA CLAVE: forzar un "dummy utterance" silencioso antes
+        // Esto "desbloquea" el motor de voz del navegador
+        const unlock = new SpeechSynthesisUtterance("");
+        unlock.volume = 0;
+        synth.speak(unlock);
+
+        // Pequeño retraso para que el dummy se procese primero
+        setTimeout(() => {
+            try {
+                synth.speak(utterance);
+                updateUIState('playing');
+            } catch (err) {
+                console.error("Error al intentar reproducir:", err);
+                updateStatus('Error de reproducción (bloqueado por navegador)', false);
+            }
+        }, 100);
+
+        // Eventos
+        utterance.onstart = () => {
+            console.log('¡Reproducción iniciada correctamente!');
             updateUIState('playing');
         };
-        
-        utterance.onend = function() {
+
+        utterance.onend = () => {
             updateUIState('stopped');
-            updateStatus('Lectura completada ✓', true);
-            setTimeout(function() {
-                updateStatus('Listo para leer esta página', false);
-            }, 3000);
+            updateStatus('Lectura completada', true);
+            setTimeout(() => updateStatus('Listo para leer esta página', false), 3000);
         };
-        
-        utterance.onerror = function(event) {
+
+        utterance.onerror = (event) => {
             console.error('Error TTS:', event);
+            updateStatus('Error: ' + event.error, false);
             updateUIState('stopped');
-            updateStatus('Error en la reproducción', false);
         };
-        
-        synth.speak(utterance);
     }
-    
+
     /**
      * Pausa/Reanuda la reproducción
      */
     function pause() {
         if (!synth.speaking) return;
-        
+
         if (isPaused) {
             synth.resume();
             updateUIState('playing');
@@ -391,7 +424,7 @@ var TTSWidget = (function() {
             updateUIState('paused');
         }
     }
-    
+
     /**
      * Detiene la reproducción
      */
@@ -401,7 +434,7 @@ var TTSWidget = (function() {
         updateUIState('stopped');
         updateStatus('Listo para leer esta página', false);
     }
-    
+
     /**
      * Actualiza el estado de la UI
      */
@@ -410,9 +443,9 @@ var TTSWidget = (function() {
         var pauseBtn = document.getElementById('ttsPauseBtn');
         var stopBtn = document.getElementById('ttsStopBtn');
         var status = document.getElementById('ttsStatus');
-        
+
         if (!playBtn || !pauseBtn || !stopBtn || !status) return;
-        
+
         switch (state) {
             case 'playing':
                 playBtn.disabled = true;
@@ -424,7 +457,7 @@ var TTSWidget = (function() {
                 status.classList.remove('completed');
                 isPaused = false;
                 break;
-                
+
             case 'paused':
                 playBtn.disabled = true;
                 pauseBtn.disabled = false;
@@ -434,7 +467,7 @@ var TTSWidget = (function() {
                 status.classList.remove('reading', 'completed');
                 isPaused = true;
                 break;
-                
+
             case 'stopped':
                 playBtn.disabled = false;
                 pauseBtn.disabled = true;
@@ -445,34 +478,34 @@ var TTSWidget = (function() {
                 break;
         }
     }
-    
+
     /**
      * Actualiza el mensaje de estado
      */
     function updateStatus(message, isCompleted) {
         var status = document.getElementById('ttsStatus');
         if (!status) return;
-        
+
         status.textContent = message;
-        
+
         if (isCompleted) {
             status.classList.add('completed');
         } else {
             status.classList.remove('completed');
         }
     }
-    
+
     /**
      * Alterna entre minimizado y expandido
      */
     function toggleWidget() {
         if (!widgetElement) return;
-        
+
         var isMinimized = widgetElement.classList.toggle('minimized');
         userPrefs.minimized = isMinimized;
         saveUserPreferences();
     }
-    
+
     // API pública
     return {
         init: init,
@@ -483,9 +516,21 @@ var TTSWidget = (function() {
     };
 })();
 
-// Auto-inicializar cuando el DOM esté listo
+// Auto-inicializar cuando el DOM esté listo, con timeout para Moodle AJAX
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() {
-        // Se inicializará desde el PHP con la configuración
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            // Se inicializará desde el PHP con la configuración
+            // Si no se llama init desde PHP, llamar aquí con defaults
+            if (!document.getElementById('ttsWidget')) {
+                TTSWidget.init({});
+            }
+        }, 500); // Espera extra para carga Moodle
     });
+} else {
+    setTimeout(function () {
+        if (!document.getElementById('ttsWidget')) {
+            TTSWidget.init({});
+        }
+    }, 500);
 }
