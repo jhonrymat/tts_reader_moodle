@@ -24,7 +24,7 @@ Plugin de bloque para Moodle 4.3+ que añade un widget flotante ultra avanzado d
 
 ![Widget expandido con barra de progreso](screenshots/widget-full.png)
 ![Resaltado sincronizado en el contenido](screenshots/highlight-karaoke.png)
-![Scroll automático en acción](screenshots/scroll-auto.mp4)
+![Scroll automático en acción](screenshots/scroll-auto.gif)
 
 ## Requisitos
 
